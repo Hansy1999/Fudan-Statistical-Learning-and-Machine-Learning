@@ -1,0 +1,158 @@
+---
+title: "Assignment2"
+author: "Han Siyue  17307110012"
+date: "2019/9/19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+# 谁在看直播
+
+案例背景：如今，饱受青睐的直播行业已进入“全民时代”，人人皆可为网络主播，人人皆有望成网络红人。不同于传统的文字、图片、视频等传播形式，直播紧密的将用户与直播内容交互在一起，受到了极大的追捧。网络直播迅速发展成为一种新的互联网文化业态。直播行为数据刻画了主播和用户的行为。通过爬取直播行为数据进行分析，可以对提高直播流量和主播的收入带来价值。案例原文详见谁在看直播。
+
+案例数据提供了爬取的直播用户行为，每一列分别对应：房间编号（room_id），操作时间（time），用户名（user_name）以及操作类型（act_type）。数据的爬取时间是2017年4月27日至2017年6月27日。
+
+这个案例的学习目标包括：
+
+1. 了解直播数据；
+
+2. 学会对直播数据做描述性分析，并且适当解读。
+
+3. 学会调用R的JavaScript可视化库，通过交互图做可视化。
+
+4. 学会基于RFM模型，分析用户价值。
+
+## 准备工作
+
+清除工作环境，安装和加载一些需要的包。
+
+## 任务一
+
+分别找到数据863.tsv和1038864.tsv。读入样本数据，分别命名为room1和room2。这里你将学会读取tsv文件。提示：tsv文件的分隔符是什么？可以借助data.table包。
+
+```{r}
+library(data.table)
+room1 <- fread("863.tsv", header = TRUE, sep = "\t", encoding = "UTF-8")
+room2 <- fread("1038864.tsv", header = TRUE, sep = "\t", encoding = "UTF-8")
+```
+
+## 任务二
+
+把数据中的操作时间列（time）转换为时间类型POSIXct。把两份数据rbind到一起，命名为room。体会rbind、cbind和merge的不同，谈谈你的理解。(合并之后通过head可以展示如下数据)
+
+```{r}
+room <- rbind(room1, room2)
+room$time <- as.POSIXct(room$time, origin = '1970-01-01')
+head(room)
+```
+
+rbind是将两个或多个data.table表的对应列顺次连接起来，使得行数为各表行数之和；
+
+cbind是将两个或多个data.table表的对应行顺次连接起来，使得列数为各表列数之和；
+
+merge是将两个拥有公共列的data.table表进行连接，使得列数为各表列数之和减去公共列数。
+
+## 任务三
+
+分房间统计用户操作数；分房间统计用户操作类型数。分析不同房间操作类型的差异。哪个房间的弹幕量多些？哪个房间的礼物量多些？结合你了解的直播，你能猜猜这些房间的类型是什么吗？提示：什么类型的房间，用户话多？什么类型的房间，用户打赏多？
+
+```{r}
+library(plyr)
+dcast(room, room_id ~ act_type, fun = length, value.var = "act_type")
+```
+
+863房间的弹幕量多些，1038864房间的礼物量多些。结合我了解的直播，我猜863房间可能是某游戏主播直播打游戏，这种直播用户话多，还可能撕逼撕起来，有人说他打得好，有人说他特别菜；而1038864房间可能是某网络红人的直播视频，这种直播用户打赏多，还有土豪送她飞机。
+
+## 任务四
+
+分周内每天（周一、周二、依次类推）统计两个房间总的日均操作数，借助ggplot2包绘制条形图，并借助plotly包将其转换为动态图，分析结果，尝试解读。首先，你理解为什么要统计每天的日均操作量，而不是各天的操作总量吗？其次，尝试将鼠标停留在图上，你发现了什么？如果用鼠标选择一块区域呢？
+
+```{r, message=FALSE}
+library(ggplot2)
+library(plotly)
+room$weekday <- weekdays(room$time)
+room$date <- as.Date((room$time))
+dates <- ddply(room, .(date, weekday), summarize, number = length(date))  # 先按照日期计数操作数
+weekday <- ddply(dates, .(weekday), summarize, average = mean(number))  # 然后按照星期几取日平均
+allweekdays <- c("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+temp <- data.frame(weekday = allweekdays)  # 构建一个新的dataframe，包含一列从星期一到星期日
+weekday <- merge(temp, weekday, sort = FALSE)  # 用merge函数使原表按照temp的weekday列排序
+weekday$average <- weekday$average / 10000
+p1 <- ggplot(weekday, mapping = aes(x=weekday, y=average))+
+      geom_bar(stat = "identity") + 
+      xlab("星期") +
+      ylab("操作量（万次）") +
+      scale_x_discrete(limits = weekday$weekday)
+mytext <- paste("count: ", weekday$average, "\n", "星期: ", weekday$weekday, "\n", "日均操作量/10000: ", weekday$average)  # 定义plotly图中每个柱子上标签显示的内容
+plty1 <- plotly_build(p1)
+style(plty1, text = mytext)
+```
+
+首先，为什么统计的是日均操作量，而不是操作总量：因为这两个直播间在不同的星期数上开直播的次数不一样，例如星期二有7天有直播，星期日有10天有直播。所以如果我们强行算总操作量的话，所得到的结果并不能直接说明星期数之间的比较，因为其中混杂了天数的影响，而取平均恰好解决了这个问题。
+
+其次，尝试将鼠标停留在图上，可以发现图上方出现一排工具栏；如果用鼠标选择一块区域，可以发现每个柱形对应的数据。
+
+【注：因为老师上课说，柱状图要考虑各柱子的排序，我看范例是随便排的（按照中文的拼音顺序），这样显然是毫无意义的。替代方式有两种，一种是按照从高到低排序，另一种是按照星期一到星期日排序。我选用的是按照星期一到星期日的排序，因为我觉得这样的观感要优于柱子从高到低排序。】
+
+## 任务五
+
+分小时（0时、1时、依次类推）分房间统计房间操作数，并利用dygraph包，绘制交互时序图，分析一天中不同时间操作数的不同，尝试解读。Hint：注意没有操作的小时，操作数应为0。两个房间的流量有没有高峰期，高峰期是同样的吗？结合前面任务推测的房间类型，尝试分析这一现象。
+
+```{r, message=FALSE}
+library(dygraphs)
+room$hour <- hour(room$time)
+hourcast <- dcast(room, room_id ~ hour, fun = length, value.var = "hour")  # 分小时统计操作数
+fillup <- data.frame(matrix(0, 2, 9))
+colnames(fillup) <- 1:9
+hourcast <- t(cbind(hourcast[, 1:2], fillup, hourcast[, -(1:2)]))  # 补齐没有操作的小时
+colnames(hourcast) <- hourcast[1,]
+hourcast <- hourcast[-1,]/10000
+hourcast <- as.data.frame(cbind(0:23, hourcast))  # 在最左边添加一列作为时间序列
+dygraph(hourcast, main = "24小时操作量分布", xlab = "小时", ylab = "操作量（万次）") %>%
+dySeries("863", label = "游戏") %>%
+dySeries("1038864", label = "颜值")%>%
+dyOptions(fillGraph = TRUE, colors = c("#00BBBB", "#FF4444"))
+```
+
+两个房间的流量均有高峰期，高峰期是不一样的，863房间高峰期较1038864房间要晚约4小时，可能是因为直播打游戏的主播习惯性打游戏打到很晚，所以直播时间、生活作息都要比颜值女主播要晚很多。
+
+## 任务六
+基于RFM模型的指标维度是：
+
+· 近度R（Recency）：最近一次操作距今小时数，标准化；
+
+· 频度F（Frequency）：平均操作时间间隔，标准化；
+
+· 强度M（Monetary）：操作总数，标准化。
+
+根据以上定义，计算两个房间总的按用户提取的RFM特征。思考这三个指标为什么可以反映用户价值？反映了用户哪方面的价值？特征值越大越好，还是越小越好？谈谈你的想法。
+
+```{r}
+latest <- max(room$time)
+user <- ddply(room, .(user_name), summarize, Monetary = length(user_name), Recency = as.numeric(difftime(latest, max(time), units = "hours")), Frequency = as.numeric(difftime(max(time), min(time), units = "hours") / (Monetary - 1)))
+```
+
+Recency可以反映用户有多久没有活跃过了；Frequency可以反映用户平均多久活跃一次；Monetary可以反映用户一共活跃的次数。其中，Recency越小越好、Frequency越小越好、Monetary越大越好。
+
+## 任务七
+
+根据任务六提取的特征，对数据做summary，并进行分析。如何根据特征值评估用户价值呢？这两个房间分别有多少用户价值比较高？如果一个主播希望你从数据上给TA提供帮助，你会提出怎样的建议？提示：可以从流量和打赏两方面谈。
+
+```{r}
+summary(user)
+```
+
+用户中有一半以上只活跃了一次，距上次活跃的时长分布比较均匀，有半数的用户的平均活跃间隔在0.108小时以内，但是其中有很多是在短时间内活跃两次，且总共只活跃了两次，所以并不能说明他们非常活跃。所以真正用户价值较高的占比应不到1/4，这是因为只有不到1/4的用户总活跃次数大于4。
+
+如果一个主播希望我从数据上给TA提供帮助，那么我们最显然的想法就是从打赏入手，我们先筛选出所有打赏的操作，然后同样使用RFM模型，可以得到下面的结果：
+
+```{r}
+gift <- room[room$act_type == "gift"]
+user_gift <- ddply(gift, .(user_name), summarize, Monetary = length(user_name), Recency = as.numeric(difftime(latest, max(time), units = "hours")), Frequency = as.numeric(difftime(max(time), min(time), units = "hours") / (Monetary - 1)))
+summary(user_gift)
+```
+
+可以看到，共有9566人有过打赏，其中约半数有超过7次的打赏，并且这九千多人的频度相比总体所有人的频度要好，即平均活跃间隔更短，由此可见，这几千人是非常活跃的，同时也应该是主播最应该留住的粉丝。

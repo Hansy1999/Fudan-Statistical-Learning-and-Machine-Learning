@@ -1,0 +1,217 @@
+---
+title: "Assignment3"
+author: "Han Siyue 17307110012"
+date: "2019/10/6"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 乐高数据可视化
+
+### 案例背景
+乐高公司于1932年在丹麦创立，至今已有87年的发展历史。其发行的玩具套装构思惊奇、设计巧妙，受到世界各地各个年龄人们的喜爱，可谓是世界上最受欢迎的玩具之一。制作精美的玩具自然在各个环节都精雕细琢——从各个零件的设计及其颜色，再到零件间的搭配从而形成套装，甚至套装亦能互相结合形成新的、更大的套装；而同时，与时俱进的推出新的主题，也是乐高玩具经久不衰的重要原因之一。在本案例当中，我们将从零件到套装、再到主题，对乐高近70年出品的玩具进行分析，一睹乐高玩具世界的炫彩缤纷。
+
+### 数据介绍
+本案例所用数据来源于乐高官方网站，包含主题、套装、零件等8个数据集，数据集之间通过变量相互连接。更详细数据介绍见本案例推文：https://mp.weixin.qq.com/s/gc7uy68Gl95GXJHOTTD1VQ
+
+### 学习目标
+* ggplot2绘图
+
+* 锻炼处理存在复杂关联的数据集的能力
+
+* 使用tidyverse管道式写法进行数据处理
+
+### 准备工作
+加载所用R包
+```{r, message=FALSE}
+cat("\014"); rm(list=ls())  # 清除工作环境
+library(data.table)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+### 任务一：数据读入
+1. 读入各个csv文件，并按照文件名进行命名
+```{r}
+colors <- fread("colors.csv", encoding = "UTF-8")
+inventories <- fread("inventories.csv", encoding = "UTF-8")
+inventory_parts <- fread("inventory_parts.csv", encoding = "UTF-8")
+inventory_sets <- fread("inventory_sets.csv", encoding = "UTF-8")
+part_categories <- fread("part_categories.csv", encoding = "UTF-8")
+part_relationships <- fread("part_relationships.csv", encoding = "UTF-8")
+parts <- fread("parts.csv", encoding = "UTF-8")
+sets <- fread("sets.csv", encoding = "UTF-8")
+themes <- fread("themes.csv", encoding = "UTF-8")
+```
+
+2. 去掉1949年以前和2019年的数据
+```{r}
+sets <- sets[sets$year >= 1949 & sets$year < 2019, ]
+```
+
+### 任务二：数据处理之颜色变量
+1. 计算color表中出现过的颜色的数量，将其命名为num_colors
+```{r}
+num_colors <- length(unique(colors, by="id")$id)
+num_colors
+```
+
+2. 将colors当中的rgb指标在开头增加‘#’，便于稍后绘图时，直接使用rgb录入配色
+```{r}
+colors$rgb <- paste(c("#"), colors$rgb, sep = "")
+```
+
+3. 将颜色的rgb数据单独保存，命名为my_color
+```{r}
+my_color <- colors$rgb
+head(my_color, n = 3L)
+```
+
+### 任务三：数据处理
+注：本任务主要针对数据集相互关联、生成新数据集，为使用ggplot2绘图准备数据
+
+1. 计算每年套装平均零件数,命名为part_year,包含year、avg_parts两个变量
+```{r}
+part_year <- ddply(sets, .(year), summarize, avg_parts = mean(num_parts))
+head(part_year, n = 3L)
+```
+
+2. 将part_category、parts、colors、themes、sets数据集当中的name变量分别命名为part_category_name、part_name、color_name、theme_name、set_name,便于以后区分
+```{r}
+colnames(part_categories)[2] <- "part_category_name"
+colnames(parts)[2] <- "part_name"
+colnames(colors)[2] <- "color_name"
+colnames(themes)[2] <- "theme_name"
+colnames(sets)[2] <- "set_name"
+```
+
+3. 将零件种类数据集和零件数据集左连接,连接所用变量为part_cat_id，新数据集命名为part_cat
+```{r}
+part_cat <- left_join(part_categories, parts, by = c("id" = "part_cat_id"))
+head(part_cat, n = 3L)
+```
+
+4. 将part_cat数据集和零件颜色数据集和零件清单数据集左连接，分别使用变量part_num和id，新数据集命名为part_color
+```{r}
+part_color <- left_join(part_cat, inventory_parts, by = "part_num")
+part_color <- left_join(part_color, colors, by = c("color_id" = "id"))
+head(part_color, n = 3L)
+```
+
+5. 计算各颜色在零件当中出现的次数，并按降序排列，同时颜色名称和其rgb一一对应。结果保留在命名为partsp_col的数据集当中，变量分别命名为color_name、rgb、part_per_color
+```{r}
+partsp_col <- ddply(part_color, .(color_name, rgb), summarize, part_per_color = length(unique(part_name)))  # 计算各颜色在零件当中出现的次数
+partsp_col <- arrange(partsp_col, desc(part_per_color))  # 按降序排列
+head(partsp_col, n = 3L)
+```
+
+6. 将套装和主题做连接,所用变量为theme_id,新的数据集命名为set_themes
+```{r}
+set_themes <- left_join(themes, sets, by = c("id" = "theme_id"))[, -3]
+head(set_themes, n = 3L)
+```
+
+7. 计算不同主题下套装的个数,将新的数据集命名为themes_per_set
+```{r}
+themes_per_set <- ddply(set_themes, .(theme_name), summarize, set_cnt = length(theme_name))
+themes_per_set <- arrange(themes_per_set, desc(set_cnt))
+head(themes_per_set, n = 3L)
+```
+
+8. 将颜色和套装进行连接
+```{r}
+set_color <- left_join(sets, inventories, by = "set_num")
+set_color <- left_join(set_color, inventory_parts, by = c("id" = "inventory_id"))
+set_color <- left_join(set_color, colors, by = c("color_id" = "id"))
+head(set_color, n = 3L)
+```
+
+9. 提取不同颜色的出现年份、使用年数、rgb,储存为scolor
+```{r}
+scolor <- set_color[, c(12, 13, 3)]
+scolor$ys <- 2019 - scolor$year
+head(scolor, n = 3L)
+```
+
+### 任务四：绘制主题箱线图
+* 使用sets表中的信息，选取某一个theme_id，对其year与num_parts两列作出箱线图，对数据较少的年份进行过滤或合并展示，并给出解读
+```{r}
+boxdata <- sets[sets$theme_id == 254, c(3, 5)]  # 选取第254号theme_id，对提取year与num_parts列
+table(boxdata$year)  # 查看各年份数据量
+boxdata <- boxdata[boxdata$year >= 2000, ]  # 去除只有一次数据的年份
+ggplot(boxdata, aes(x = factor(year), y = num_parts)) + 
+  geom_boxplot() +
+  labs(x = "Year", y = "Num of Parts")
+```
+
+可以看出，同一个主题的套装中零件的个数随着年份的增长而增多，即乐高的套装中的零件随年份的增长变得越来越复杂，越来越具有挑战性。
+
+### 任务五：绘制主题数量时间序列图
+* 使用sets表中的信息，绘制乐高主题数量时间序列图，并给出解读
+```{r}
+linedata <- ddply(sets, .(year), summarize, cnt = length(unique(theme_id)))  # 提取出主题数量关于时间序列的数据
+ggplot(linedata, aes(x = year, y = cnt)) + 
+  geom_line(colour = "skyblue4", size = 1) +
+  geom_point(colour = "skyblue4") +
+  labs(x = "Year", y = "The count of theme")
+```
+
+可以看出，每一年出现的主题数量随着年份的增长而增多，即乐高的主题变得越来越丰富。
+
+### 任务六:绘制零件类别所包含零件数量柱状图
+* 使用part_cat表中信息，绘制零件类别所包含零件数量柱状图，并给出解读
+```{r}
+bardata <- ddply(part_cat, .(part_category_name), summarize, cnt = length(part_category_name))  # 提取出各零件列表所包含的零件数量的数据
+bardata <- arrange(bardata, desc(cnt))[1:32, ]  # 取排名前32项
+getPalette <- colorRampPalette(brewer.pal(9, "Blues")[5:8])  # 设置颜色
+ggplot(bardata, aes(x = part_category_name, y = cnt)) +
+  geom_bar(stat = "identity", fill = rep(getPalette(4), 8)) +
+  scale_x_discrete(limits = rev(bardata$part_category_name)) +
+  labs(x = "Category", y = "The number of part") +
+  coord_flip() +
+  theme(legend.position="none")
+```
+
+可以看出，有一大部分的零件的类别为Minifig Upper Body、Duplo, Quatro and Primo、Minifig Heads一，这三种零件出现的次数最多。另外可以看出，零件种类的分布比较近似于幂律分布。
+
+### 任务七：绘制颜色出现次数柱状图、历年颜色出现次数堆积图
+* 使用partsp_col表中数据绘制颜色出现次数柱状图，并给出解读
+```{r}
+colorbar <- partsp_col[1:20, ]  # 选择part最多的20个数据
+colorbar <- colorbar[!is.na(colorbar$color_name), ]  # 去除NA项
+ggplot(colorbar, aes(x = color_name, y = part_per_color)) +
+  geom_bar(stat = "identity", fill = colorRampPalette(rev(colorbar$rgb))(19)) +
+  scale_x_discrete(limits = rev(colorbar$color_name)) +
+  labs(x = "Color", y = "Part") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  #scale_color_manual(values = ) +
+  theme(legend.position="none")
+```
+
+可以看出，白色和黑色的零件最多，其次是，红黄蓝这三种基本的颜色也非常多，再接着，有几种不同的灰色出现的次数也较多。总体而言，颜色的分布也比较近似于幂律分布。
+
+* 使用set_color绘制历年颜色出现次数堆积图，并给出解读
+```{r}
+colorstack <- set_color[, c(3, 12, 13)]  # 从set_color中提取year和rgb列
+colorstack <- ddply(colorstack, .(year, rgb, color_name), summarize, unit = 1)  # 将相同年份和颜色的行合并
+
+new_colorstack <- data.frame(year = c(), rgb = c(), unit = c())
+for (year in 1949:2019){
+  # 按年份将颜色倒序排列，并用rbind添加到新的new_colorstack
+  rev <- colorstack[colorstack$year == year, c(1, 2, 4)]
+  rev$rgb <- rev(rev$rgb)
+  new_colorstack <- rbind(new_colorstack, rev)
+}
+
+ggplot(new_colorstack, aes(x = year, y = unit)) +
+  geom_bar(stat = "identity", position = 'stack', fill = new_colorstack$rgb) +
+  labs(x = "Year", y = "The count of color") +
+  theme(legend.position="none")
+```
+
+可以看出，黑白、红黄蓝这几种比较基本的颜色贯穿了整个乐高的历史；此外，随着时间的推进，乐高的颜色种类也变得越来越丰富，并在2005年前后达到顶峰，超过了100种，此后虽有回落，但也保持着一定丰富度的颜色种类，保持在70种左右。
