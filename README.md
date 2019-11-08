@@ -9,7 +9,9 @@ For [assignment2](.\assignment2\report.html), my score of this assignment is: 9/
 
 For [assignment3](.\assignment3\report.html), together with [proof problems](.\assignment3 证明题\ISLML_Assignment3_17307110012_韩思越.pdf), my score of this assignment is: 15/15, with comment " 任务三可以学习下管道操作的用法 " from TA.
 
-For [assignment4](.\assignment4\ISLML_Assignment4_17307110012_韩思越.pdf), no score received yet.
+For [assignment4](.\assignment4\ISLML_Assignment4_17307110012_韩思越.pdf), my score of this assignment is: 4.5/5, with no comment.
+
+For [assignment5](.\assignment5\ISLML_Assignment5_17307110012_韩思越.pdf), my score of this assignment is: 5/5, with no comment.
 
 ## Team Assignment
 
