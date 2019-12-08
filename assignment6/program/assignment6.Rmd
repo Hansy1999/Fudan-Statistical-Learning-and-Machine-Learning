@@ -1,0 +1,121 @@
+---
+title: "Assignment6"
+author: "Han Siyue 17307110012"
+date: "2019/11/5"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 某移动通讯客户流失预警分析案例
+
+案例背景：目前在我国移动通讯行业基本呈现三足鼎立的局势，市场份额由中国移动、中国联通和中国电信三家运营商瓜分。客户流失问题非常严重，从近5年的统计数字来看，三家运营商的移动客户数增长缓慢，中国联通在2015年甚至出现了负增长。因此建立一套系统的客户流失预警体系已是燃眉之急。案例原文详见某移动通讯公司客户流失预警分析
+
+本案例使用的数据来自国内某运营商，数据已经进行了清理，数据集中的变量包括：
+
+【因变量】
+
+是否流失：1=流失；0=非流失
+
+【自变量】
+
+* 在网时长（tenure）：客户从入网到截止数据提取日期时在网时间，单位：天
+* 当月花费（expense）：客户在提取月份时的花费总额，单位：元
+* 个体的度（degree）：和客户通话的总人数，去重之后的呼入与呼出贾总，单位： 人数
+* 联系强度（tightness）：通话总时间除以总人数，单位：分钟/人
+* 个体信息熵（entropy）：计算公式详见数据说明
+* 个体度的变化（chgdegree）：（本月个体的度-上月个体的度）/上月个体的度
+* 花费的变化（chgexpense）：（本月花费-上月花费）/上月花费
+
+本案例学习目标：
+
+* 拟合逻辑回归模型并给出标准化系数估计
+* 进行外样本预测
+* 学习绘制覆盖率-捕获率曲线
+
+### 准备工作
+清除工作环境，安装和加载一些需要的包。
+```{r}
+cat("\014"); rm(list=ls())  # 清除工作环境
+library(ggplot2)
+library(nnet)
+```
+
+### 任务一
+读入数据并检查是否有异常值存在，如果观测值超出均值加减3倍标准差的范围，则进行删除。分别用summary函数展示异常值处理之前与之后的数据。
+```{r}
+# read the original data
+data_orig <- read.csv("sampledata.csv", fileEncoding = 'UTF-8')
+pred_orig <- read.csv("preddata.csv", fileEncoding = 'UTF-8')
+summary(data_orig)
+# initialize the reserved row as all-reserved 
+reserve <- 1
+for (i in 2:8) {
+  # take the i-th column as a vector
+  col_vec <- data_orig[, i]
+  # set the lower and upper bound for each column
+  lower <- mean(col_vec) - 3 * sd(col_vec)
+  upper <- mean(col_vec) + 3 * sd(col_vec)
+  # reserve only rows which fall between two bounds
+  reserve <- reserve & (lower <= col_vec & col_vec <= upper)
+}
+data_trim <- data_orig[reserve, ]
+summary(data_trim)
+```
+
+### 任务二
+先对自变量进行标准化，使得其均值为0，方差为1。然后拟合逻辑回归模型，给出标准化系数估计结果。
+```{r}
+# 标准化自变量
+data_std <- cbind(data_trim[, 1], as.data.frame(scale(data_trim[, c(-1, -9)])), data_trim[, 9])
+colnames(data_std)[1] <- "ID"
+colnames(data_std)[9] <- "churn"
+# 建立逻辑回归模型
+logit_model <- glm(churn ~ tenure + expense + degree + tightness + entropy + chgdegree + chgexpense, family = binomial(link = "logit"), data = data_std)
+summary(logit_model)
+```
+**系数解读**
+
+逻辑回归模型中共有5个显著变量，分别是在网时长，当月话费，个体的度，联系强度，个体的度的变化。将回归系数取$e$的指数可得，当其他条件一定时： 
+
+* 在网时长每多1天，客户流失的几率降低23.9%
+* 当月话费每多1元，客户流失的几率降低21.5%
+* 个体的度每多1人，客户流失的几率降低57.4%
+* 联系强度每提高1分钟/人，客户流失的几率降低20.1%
+* 个体的度的变化每增加1个单位，客户流失的几率降30.6%
+
+### 任务三
+将任务二中的参数估计结果应用到predata中，给出predata中每个用户预测的流失概率值，展示前6行的预测结果。
+```{r}
+# 对预测集做标准化处理
+pred_std <- cbind(pred_orig[, 1], as.data.frame(scale(pred_orig[, c(-1, -9)])), pred_orig[, 9])
+colnames(pred_std)[1] <- "ID"
+colnames(pred_std)[9] <- "churn"
+# 运用predict方程作出预测
+pred_std$prob <- predict(logit_model, newdata = pred_std[, c(-1, -9)], type = "response")
+head(pred_std$prob)
+```
+
+### 任务四
+绘制覆盖率-捕获率曲线。逻辑回归的评价指标ROC曲线（或AUC值）我们已经非常熟悉了，那么什么是覆盖率-捕获率曲线呢？其实和ROC曲线差不多，只不过在业界比较常用。可以这样理解覆盖率-捕获率曲线：根据模型给出每个样本的预测流失概率值，按照预测值从高到低对样本进行排序，例如只覆盖前10%的样本，计算对应的真实流失的样本数占所有流失样本数的比例，记为捕获率，以此类推，可以覆盖不同比例的样本，就可以计算不同的覆盖率对应的捕获率，从而得到覆盖率捕获率曲线，如果在较低的覆盖率情况可以获得较高的捕获率，那么说明模型的精度比较高。因此在绘制的时候需要借助循环，计算不同的覆盖率下的捕获率是多少，最后进行曲线的绘制。
+```{r}
+# 提取捕获率和覆盖率信息
+data <- pred_std[, c(9, 10)]
+data <- data[order(-data$prob), ]
+nrows <- nrow(data)
+coverage <- (1:nrows)/nrows
+capture <- data[, 1]
+for (i in 2:nrows) {
+  capture[i] <- capture[i-1] + capture[i]
+}
+capture <- capture / sum(data$churn)
+data_plot <- cbind(as.data.frame(coverage), as.data.frame(capture))
+# 绘制覆盖率-捕获率曲线
+ggplot(data = data_plot) + 
+  geom_line(aes(coverage, capture), size = 1) +
+  xlab("覆盖率") +
+  ylab("捕获率")
+```
+
